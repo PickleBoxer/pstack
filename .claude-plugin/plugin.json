@@ -1,7 +1,7 @@
 {
   "name": "pstack",
   "displayName": "pstack",
-  "version": "0.15.15+claude.1",
+  "version": "0.15.15+claude.2",
   "description": "poteto's rigorous engineering skills (poteto-mode, how/why, architect, verification), ported from Cursor and kept in sync with upstream",
   "author": {
     "name": "PickleBoxer"
