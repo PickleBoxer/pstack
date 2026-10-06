@@ -3,13 +3,12 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { PstackLoaded, PstackSkill } from '../types'
 import { descriptionFrom, grouped } from './catalog'
-import { potetoSection, storeKey } from './poteto'
+import { POTETO_OFF, potetoSection, storeKey } from './poteto'
 import { agentModel, agentType, harnessNote, modelsFrom } from './translate'
 
 // The org's security plugin can bypass user-tier skill.prompt hooks, so the note rides prompt.submit and Read instead
 const PSTACK_COMMAND = /^\/pstack:(\S+)/
 const PANE = 'pstack'
-const POTETO_SECTION = 'pstack:poteto-mode'
 const HIDDEN_KEY = 'hidden'
 const LOADED_TAB = 'Loaded'
 const WORDMARK = ['█▀█ █▀ ▀█▀ ▄▀█ █▀▀ █▄▀', '█▀▀ ▄█  █  █▀█ █▄▄ █ █']
@@ -19,6 +18,7 @@ const skills = atom({ plugin: 'pstack', key: 'skills' } as const, [])
 const hidden = atom({ plugin: 'pstack', key: 'hidden' } as const, [])
 const group = atom({ plugin: 'pstack', key: 'group' } as const, '')
 const loaded = atom({ plugin: 'pstack', key: 'loaded' } as const, [])
+const pinned = atom({ plugin: 'pstack', key: 'pinned' } as const, false)
 
 // Mirrors the project's stored choice into session state, which prompt.submit reads
 async function loadPoteto($: EngineInterface, isDefault: boolean): Promise<boolean> {
@@ -86,6 +86,7 @@ export const register: Register = (on, options) => {
     potetoSkill = String(await $.fs.read(`${$.plugin.root}/skills/poteto-mode/SKILL.md`).catch(() => ''))
     version = versionFrom(String(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`).catch(() => '')))
     await update($, loaded, () => [])
+    await update($, pinned, () => false)
     await $.command.register({ name: 'poteto', description: 'Toggle poteto mode for this project' })
     await $.command.register({ name: 'pstack', description: 'Browse, run and hide pstack skills' })
     await loadPoteto($, isPotetoDefault)
@@ -124,27 +125,25 @@ export const register: Register = (on, options) => {
 
   on('prompt.submit', async ($, e, next) => {
     const command = e.text.match(PSTACK_COMMAND)?.[1]
+    const context = [...(e.context ?? [])]
 
     if (command !== undefined) {
       noted.add('')
       await markLoaded($, command, 'run')
-
-      return next({ ...e, context: [...(e.context ?? []), harnessNote($.plugin.root, models)] })
+      context.push(harnessNote($.plugin.root, models))
     }
 
-    return next(e)
-  })
+    // The conversation catches up with the toggle on the next prompt the model reads
+    if (command !== undefined || !e.text.startsWith('/')) {
+      const isOn = await read($, poteto)
 
-  on('prompt.compose', async ($, e, next) => {
-    const composed = await next(e)
-
-    if (!(await read($, poteto))) {
-      return composed
+      if (isOn !== (await read($, pinned))) {
+        context.push(isOn ? potetoSection($.plugin.root, potetoSkill, harnessNote($.plugin.root, models)) : POTETO_OFF)
+        await update($, pinned, () => isOn)
+      }
     }
 
-    const text = potetoSection($.plugin.root, potetoSkill, harnessNote($.plugin.root, models))
-
-    return { sections: [...composed.sections, { id: POTETO_SECTION, text, scope: 'session' }] }
+    return next(context.length === (e.context ?? []).length ? e : { ...e, context })
   })
 
   on('tool.call', { tool: 'Read' }, async ($, e, next) => {
@@ -172,6 +171,7 @@ export const register: Register = (on, options) => {
 
     if (e.agentId === undefined && e.trigger !== 'precompute' && !('skip' in result)) {
       await update($, loaded, () => [])
+      await update($, pinned, () => false)
     }
 
     return result
@@ -217,11 +217,12 @@ export const register: Register = (on, options) => {
       return <Text dimColor>No pstack skills found under {$.plugin.root}/skills.</Text>
     }
 
-    const pinned = isOn ? [{ name: 'poteto-mode', note: 'pinned while poteto is on' }] : []
+    const isPinned = await read($, pinned)
+    const pinnedRows = isPinned ? [{ name: 'poteto-mode', note: 'in context while poteto is on' }] : []
     const sessionLoaded = (await read($, loaded))
-      .filter(one => !(isOn && one.name === 'poteto-mode'))
+      .filter(one => !(isPinned && one.name === 'poteto-mode'))
       .map(one => ({ name: one.name, note: one.via === 'read' ? 'read this session' : 'run this session' }))
-    const loadedRows = [...pinned, ...sessionLoaded]
+    const loadedRows = [...pinnedRows, ...sessionLoaded]
     const loadedNames = new Set(loadedRows.map(one => one.name))
 
     const groups = grouped(all).slice(0, 8)
@@ -242,7 +243,7 @@ export const register: Register = (on, options) => {
             </Text>
           ))}
           <Text color={isOn ? 'success' : undefined} dimColor={!isOn} wrap="truncate-end">
-            {isOn ? '♛ poteto on: poteto-mode is pinned, every task gets the playbooks' : '♛ poteto off: /poteto or the footer toggle pins poteto-mode'}
+            {isOn ? '♛ poteto on: poteto-mode rides the conversation, every task gets the playbooks' : '♛ poteto off: /poteto or the footer toggle pins poteto-mode'}
           </Text>
           <Text dimColor wrap="truncate-end">
             new here? press 1, then /poteto-help

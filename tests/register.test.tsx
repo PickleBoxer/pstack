@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import { descriptionFrom, grouped } from '../hooks/catalog'
-import { potetoSection } from '../hooks/poteto'
+import { POTETO_OFF, potetoSection } from '../hooks/poteto'
 import { agentModel, agentType, harnessNote, modelsFrom } from '../hooks/translate'
 
 const DEFAULTS = modelsFrom({})
@@ -161,7 +161,6 @@ describe('agent.spawn', () => {
 
 const POTETO_SKILL = '---\nname: Poteto Mode\nmode: true\nreminder: New task? Apply it.\n---\n\n# Poteto mode\n'
 const PROJECT = '/work/app'
-const COMPOSE = { model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: [], tools: [], outputStyle: null, traits: [] }
 
 function entry(name: string, kind: 'file' | 'dir'): FsEntry {
   return { name, kind, size: 0, mtimeMs: 0, isLink: false }
@@ -194,7 +193,6 @@ async function session($: Engine, on: On, stored: Record<string, unknown> = {}, 
   on('command.describe', async (_$, e) => ({ description: e.description, isHidden: e.isHidden }))
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
   on('command.run', async () => ({ text: 'engine' }))
-  on('prompt.compose', async () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' as const }] }))
   on('session.compact', async (_$, e) => ({ messages: e.messages }))
   await $.session.start({ cwd: PROJECT, surface: 'terminal', isInteractive: true })
 
@@ -202,49 +200,61 @@ async function session($: Engine, on: On, stored: Record<string, unknown> = {}, 
 }
 
 describe('poteto mode', () => {
-  test('pins the skill body without its frontmatter', () => {
+  test('carries the skill body without its frontmatter', () => {
     const text = potetoSection('/p', POTETO_SKILL, 'NOTE')
 
     expect(text).toBe(
-      'Poteto mode is on for this project. The poteto-mode skill below is pinned: follow it on every turn, no Read of its SKILL.md needed. Its playbooks and references live under `/p/skills/poteto-mode/`.\n\nNOTE\n\n# Poteto mode',
+      'Poteto mode is on for this project. Follow the poteto-mode skill below on every turn until a later note says poteto mode is off; no Read of its SKILL.md needed. Its playbooks and references live under `/p/skills/poteto-mode/`.\n\nNOTE\n\n# Poteto mode',
     )
   })
 
-  test('/poteto pins and unpins the skill in the system prompt', async ($, on) => {
+  test('turned on mid-session, the next prompt carries the skill once, and turning it off says so', async ($, on) => {
     const { toasts } = await session($, on)
 
-    const off = await $.prompt.compose(COMPOSE)
+    const before = await $.prompt.submit(typed('fix the login bug'))
     await $.command.run(typedCommand('poteto'))
-    const pinned = await $.prompt.compose(COMPOSE)
-    const prompt = await $.prompt.submit(typed('fix the login bug'))
+    const local = await $.prompt.submit(typed('/clear'))
+    const first = await $.prompt.submit(typed('fix the login bug'))
+    const second = await $.prompt.submit(typed('and the signup bug'))
     await $.command.run(typedCommand('poteto'))
-    const unpinned = await $.prompt.compose(COMPOSE)
+    const off = await $.prompt.submit(typed('thanks'))
+    const after = await $.prompt.submit(typed('one more'))
 
-    expect(off.sections.map(section => section.id)).toEqual(['intro'])
-    expect(pinned.sections.map(section => [section.id, section.scope])).toEqual([
-      ['intro', 'shared'],
-      ['pstack:poteto-mode', 'session'],
-    ])
-    expect(pinned.sections[1]?.text).toContain('# Poteto mode')
-    expect(prompt.context).toBeUndefined()
-    expect(unpinned.sections.map(section => section.id)).toEqual(['intro'])
+    expect(before.context).toBeUndefined()
+    expect(local.context).toBeUndefined()
+    expect(first.context).toHaveLength(1)
+    expect(first.context?.[0]).toContain('# Poteto mode')
+    expect(second.context).toBeUndefined()
+    expect(off.context).toEqual([POTETO_OFF])
+    expect(after.context).toBeUndefined()
     expect(toasts).toEqual(['poteto mode on', 'poteto mode off'])
+  })
+
+  test('carries the skill again after compaction', async ($, on) => {
+    await session($, on, { [`poteto:${PROJECT}`]: true })
+
+    const first = await $.prompt.submit(typed('fix the login bug'))
+    await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
+    const afterCompact = await $.prompt.submit(typed('keep going'))
+
+    expect(first.context?.[0]).toContain('# Poteto mode')
+    expect(afterCompact.context?.[0]).toContain('# Poteto mode')
   })
 
   test('remembers the choice per project', async ($, on) => {
     await session($, on, { [`poteto:${PROJECT}`]: true, 'poteto:/other': false })
 
-    const composed = await $.prompt.compose(COMPOSE)
+    const prompt = await $.prompt.submit(typed('fix the login bug'))
 
-    expect(composed.sections.map(section => section.id)).toEqual(['intro', 'pstack:poteto-mode'])
+    expect(prompt.context?.[0]).toContain('Poteto mode is on for this project')
   })
 
   test('poteto_default turns it on for projects with no choice yet', { options: { poteto_default: true } }, async ($, on) => {
     await session($, on)
 
-    const composed = await $.prompt.compose(COMPOSE)
+    const prompt = await $.prompt.submit(typed('fix the login bug'))
 
-    expect(composed.sections.map(section => section.id)).toEqual(['intro', 'pstack:poteto-mode'])
+    expect(prompt.context?.[0]).toContain('Poteto mode is on for this project')
   })
 
   test('the footer shows poteto on and off after the other modes and toggles on press', async ($, on) => {
@@ -258,7 +268,6 @@ describe('poteto mode', () => {
 
       await footer.press({ key: 'poteto' })
       expect(await footer.find({ type: 'Text', text: ' ♛ on' })).toBeDefined()
-      expect((await $.prompt.compose(COMPOSE)).sections.at(-1)?.id).toBe('pstack:poteto-mode')
 
       await footer.press({ key: 'poteto' })
       await footer.unmount()
@@ -325,7 +334,7 @@ describe('/pstack pane', () => {
     expect(filled).toEqual(['/pstack:how ', '/pstack:how '])
   })
 
-  test('the Loaded tab lists the pinned poteto-mode and skills read or run, until compaction', async ($, on) => {
+  test('the Loaded tab lists poteto-mode and skills read or run while they are in context', async ($, on) => {
     await session($, on, { [`poteto:${PROJECT}`]: true })
     const root = await pluginRoot($)
     await $.tool.call({ tool: 'Read', file_path: `${root}/skills/principle-prove-it-works/SKILL.md` })
@@ -335,7 +344,7 @@ describe('/pstack pane', () => {
     const dot = await ui.find({ type: 'Text', text: '●' })
     await ui.press({ key: 'group-Loaded' })
     const label = (await ui.find({ key: 'group-Loaded' }))?.text
-    const pinned = await ui.find({ type: 'Text', text: 'pinned while poteto is on' })
+    const pinned = await ui.find({ type: 'Text', text: 'in context while poteto is on' })
     const run = await ui.find({ key: 'run-how' })
     const readOne = await ui.find({ key: 'run-principle-prove-it-works' })
 
@@ -350,7 +359,7 @@ describe('/pstack pane', () => {
     expect(pinned).toBeDefined()
     expect(run).toBeDefined()
     expect(readOne).toBeDefined()
-    expect(afterLabel).toBe('Loaded 1')
+    expect(afterLabel).toBe('Loaded 0')
     expect(afterRun).toBeUndefined()
   })
 

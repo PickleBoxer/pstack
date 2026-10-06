@@ -18,6 +18,8 @@ declare module 'claude-code' {
       group: string
       // Cleared at compaction and at session start; the pinned poteto-mode is derived from poteto instead
       loaded: PstackLoaded[]
+      // Whether the conversation holds the poteto-mode text; cleared at compaction and session start
+      pinned: boolean
     }
   }
 }
