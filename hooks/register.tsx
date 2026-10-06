@@ -3,12 +3,13 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { PstackSkill } from '../types'
 import { descriptionFrom, grouped } from './catalog'
-import { potetoContext, reminderFrom, storeKey } from './poteto'
+import { potetoSection, storeKey } from './poteto'
 import { agentModel, agentType, harnessNote, modelsFrom } from './translate'
 
 // The org's security plugin can bypass user-tier skill.prompt hooks, so the note rides prompt.submit and Read instead
 const PSTACK_COMMAND = /^\/pstack:\S/
 const PANE = 'pstack'
+const POTETO_SECTION = 'pstack:poteto-mode'
 const HIDDEN_KEY = 'hidden'
 
 const poteto = atom({ plugin: 'pstack', key: 'poteto' } as const, false)
@@ -60,10 +61,10 @@ export const register: Register = (on, options) => {
   const isPotetoDefault = options.poteto_default === true
   // Loops (main is '') that already carry the note this turn
   const noted = new Set<string>()
-  let reminder = reminderFrom('')
+  let potetoSkill = ''
 
   on('session.start', async ($, e, next) => {
-    reminder = reminderFrom(String(await $.fs.read(`${$.plugin.root}/skills/poteto-mode/SKILL.md`).catch(() => '')))
+    potetoSkill = String(await $.fs.read(`${$.plugin.root}/skills/poteto-mode/SKILL.md`).catch(() => ''))
     await $.command.register({ name: 'poteto', description: 'Toggle poteto mode for this project' })
     await $.command.register({ name: 'pstack', description: 'Browse, run and hide pstack skills' })
     await loadPoteto($, isPotetoDefault)
@@ -107,13 +108,19 @@ export const register: Register = (on, options) => {
       return next({ ...e, context: [...(e.context ?? []), harnessNote($.plugin.root, models)] })
     }
 
-    const isOn = await read($, poteto)
+    return next(e)
+  })
 
-    if (!isOn || e.text.startsWith('/')) {
-      return next(e)
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e)
+
+    if (!(await read($, poteto))) {
+      return composed
     }
 
-    return next({ ...e, context: [...(e.context ?? []), potetoContext($.plugin.root, reminder)] })
+    const text = potetoSection($.plugin.root, potetoSkill, harnessNote($.plugin.root, models))
+
+    return { sections: [...composed.sections, { id: POTETO_SECTION, text, scope: 'session' }] }
   })
 
   on('tool.call', { tool: 'Read' }, async ($, e, next) => {

@@ -1,16 +1,13 @@
-// Poteto mode: Cursor pins it as a Custom Mode, here /poteto toggles a per-project reminder
+// Cursor pins poteto mode's SKILL.md into the system prompt as a Custom Mode; here /poteto toggles that pin per project
 
-const FALLBACK = "New task? Playbook match or rigor needed -> apply /poteto-mode. Casual turn or user opts out -> don't."
+export function potetoSection(root: string, skill: string, note: string): string {
+  const body = skill.replace(/^---\n[\s\S]*?\n---\n*/, '').trim()
 
-// Upstream keeps the mode's reminder in poteto-mode's frontmatter, so it follows upstream edits
-export function reminderFrom(skill: string): string {
-  const frontmatter = skill.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ''
-
-  return frontmatter.match(/^reminder:\s*(.+)$/m)?.[1]?.trim() || FALLBACK
-}
-
-export function potetoContext(root: string, reminder: string): string {
-  return `Poteto mode is on. ${reminder} To apply /poteto-mode, Read \`${root}/skills/poteto-mode/SKILL.md\` and follow it; the Skill tool refuses pstack skills.`
+  return [
+    `Poteto mode is on for this project. The poteto-mode skill below is pinned: follow it on every turn, no Read of its SKILL.md needed. Its playbooks and references live under \`${root}/skills/poteto-mode/\`.`,
+    note,
+    body,
+  ].join('\n\n')
 }
 
 export function storeKey(projectRoot: string): string {

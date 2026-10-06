@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import { descriptionFrom, grouped } from '../hooks/catalog'
-import { reminderFrom } from '../hooks/poteto'
+import { potetoSection } from '../hooks/poteto'
 import { agentModel, agentType, harnessNote, modelsFrom } from '../hooks/translate'
 
 const DEFAULTS = modelsFrom({})
@@ -161,6 +161,7 @@ describe('agent.spawn', () => {
 
 const POTETO_SKILL = '---\nname: Poteto Mode\nmode: true\nreminder: New task? Apply it.\n---\n\n# Poteto mode\n'
 const PROJECT = '/work/app'
+const COMPOSE = { model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: [], tools: [], outputStyle: null, traits: [] }
 
 function entry(name: string, kind: 'file' | 'dir'): FsEntry {
   return { name, kind, size: 0, mtimeMs: 0, isLink: false }
@@ -193,50 +194,56 @@ async function session($: Engine, on: On, stored: Record<string, unknown> = {}, 
   on('command.describe', async (_$, e) => ({ description: e.description, isHidden: e.isHidden }))
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
   on('command.run', async () => ({ text: 'engine' }))
+  on('prompt.compose', async () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' as const }] }))
   await $.session.start({ cwd: PROJECT, surface: 'terminal', isInteractive: true })
 
   return shown
 }
 
 describe('poteto mode', () => {
-  test('reads the reminder from poteto-mode frontmatter', () => {
-    expect(reminderFrom(POTETO_SKILL)).toBe('New task? Apply it.')
-    expect(reminderFrom('# no frontmatter')).toContain('apply /poteto-mode')
+  test('pins the skill body without its frontmatter', () => {
+    const text = potetoSection('/p', POTETO_SKILL, 'NOTE')
+
+    expect(text).toBe(
+      'Poteto mode is on for this project. The poteto-mode skill below is pinned: follow it on every turn, no Read of its SKILL.md needed. Its playbooks and references live under `/p/skills/poteto-mode/`.\n\nNOTE\n\n# Poteto mode',
+    )
   })
 
-  test('/poteto toggles the reminder on plain prompts', async ($, on) => {
+  test('/poteto pins and unpins the skill in the system prompt', async ($, on) => {
     const { toasts } = await session($, on)
 
-    const off = await $.prompt.submit(typed('fix the login bug'))
-    const turnedOn = await $.command.run(typedCommand('poteto'))
-    const on1 = await $.prompt.submit(typed('fix the login bug'))
-    const command = await $.prompt.submit(typed('/clear'))
-    const turnedOff = await $.command.run(typedCommand('poteto'))
-    const off2 = await $.prompt.submit(typed('fix the login bug'))
+    const off = await $.prompt.compose(COMPOSE)
+    await $.command.run(typedCommand('poteto'))
+    const pinned = await $.prompt.compose(COMPOSE)
+    const prompt = await $.prompt.submit(typed('fix the login bug'))
+    await $.command.run(typedCommand('poteto'))
+    const unpinned = await $.prompt.compose(COMPOSE)
 
-    expect(off.context).toBeUndefined()
-    expect(turnedOn.text).toBeUndefined()
-    expect(on1.context?.[0]).toContain('Poteto mode is on. New task? Apply it.')
-    expect(command.context).toBeUndefined()
-    expect(turnedOff.text).toBeUndefined()
-    expect(off2.context).toBeUndefined()
+    expect(off.sections.map(section => section.id)).toEqual(['intro'])
+    expect(pinned.sections.map(section => [section.id, section.scope])).toEqual([
+      ['intro', 'shared'],
+      ['pstack:poteto-mode', 'session'],
+    ])
+    expect(pinned.sections[1]?.text).toContain('# Poteto mode')
+    expect(prompt.context).toBeUndefined()
+    expect(unpinned.sections.map(section => section.id)).toEqual(['intro'])
     expect(toasts).toEqual(['poteto mode on', 'poteto mode off'])
   })
 
   test('remembers the choice per project', async ($, on) => {
     await session($, on, { [`poteto:${PROJECT}`]: true, 'poteto:/other': false })
 
-    const prompt = await $.prompt.submit(typed('fix the login bug'))
+    const composed = await $.prompt.compose(COMPOSE)
 
-    expect(prompt.context?.[0]).toContain('Poteto mode is on')
+    expect(composed.sections.map(section => section.id)).toEqual(['intro', 'pstack:poteto-mode'])
   })
 
   test('poteto_default turns it on for projects with no choice yet', { options: { poteto_default: true } }, async ($, on) => {
     await session($, on)
 
-    const prompt = await $.prompt.submit(typed('fix the login bug'))
+    const composed = await $.prompt.compose(COMPOSE)
 
-    expect(prompt.context?.[0]).toContain('Poteto mode is on')
+    expect(composed.sections.map(section => section.id)).toEqual(['intro', 'pstack:poteto-mode'])
   })
 
   test('the footer shows poteto on and off after the other modes and toggles on press', async ($, on) => {
@@ -250,7 +257,7 @@ describe('poteto mode', () => {
 
       await footer.press({ key: 'poteto' })
       expect(await footer.find({ type: 'Text', text: ' ♛ on' })).toBeDefined()
-      expect((await $.prompt.submit(typed('fix the login bug'))).context?.[0]).toContain('Poteto mode is on')
+      expect((await $.prompt.compose(COMPOSE)).sections.at(-1)?.id).toBe('pstack:poteto-mode')
 
       await footer.press({ key: 'poteto' })
       await footer.unmount()
