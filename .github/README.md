@@ -86,7 +86,16 @@ git merge --ff-only sync/upstream
 git branch -d sync/upstream
 ```
 
-Skip an upstream commit with `git merge -s ours <hash>`. After a sync, bump `version` in `.claude-plugin/plugin.json` to `<upstream version>+claude.<n>`. New upstream skills are hidden automatically.
+Skip an upstream commit with `git merge -s ours <hash>`. New upstream skills are hidden automatically.
+
+## Versioning
+
+`version` in `.claude-plugin/plugin.json` is `<upstream version>+claude.<n>`, and Claude Code updates users whenever it changes:
+
+- A sync that brings a new upstream version resets `n`: `0.15.16+claude.1`.
+- Any other release bumps `n`: `0.15.15+claude.2`.
+
+Tag each release `v<version>` and push the tag.
 
 ## Credits
 
