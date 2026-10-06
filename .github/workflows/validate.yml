@@ -13,5 +13,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npx -y @anthropic-ai/claude-code plugin validate .
-      - run: npx -y @anthropic-ai/claude-code plugin test .
+      - run: npx -y @anthropic-ai/claude-code plugin validate . --strict
+      # plugin test runs every *.test.ts under the folder, and upstream's bun tests under skills/ cannot load there
+      - run: |
+          mkdir "$RUNNER_TEMP/mod"
+          cp -R .claude-plugin hooks tests tsconfig.json "$RUNNER_TEMP/mod/"
+          npx -y @anthropic-ai/claude-code plugin test "$RUNNER_TEMP/mod"
