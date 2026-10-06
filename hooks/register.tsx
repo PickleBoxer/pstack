@@ -25,6 +25,12 @@ async function loadPoteto($: EngineInterface, isDefault: boolean): Promise<boole
   return isOn
 }
 
+// The app surfaces leave SessionMode undrawn, so the label also pins there as a status line
+async function showPoteto($: EngineInterface, isOn: boolean): Promise<void> {
+  const isInApp = (await $.session.surfaces()).some(surface => surface !== 'terminal')
+  $.ui.status(isOn && isInApp ? LABEL : undefined)
+}
+
 // Every folder under skills/ with its frontmatter description, read once per session
 async function loadSkills($: EngineInterface): Promise<void> {
   const entries = await $.fs.list(`${$.plugin.root}/skills`).catch(() => [])
@@ -59,18 +65,27 @@ export const register: Register = (on, options) => {
     reminder = reminderFrom(String(await $.fs.read(`${$.plugin.root}/skills/poteto-mode/SKILL.md`).catch(() => '')))
     await $.command.register({ name: 'poteto', description: 'Toggle poteto mode for this project' })
     await $.command.register({ name: 'pstack', description: 'Browse, run and hide pstack skills' })
-    await loadPoteto($, isPotetoDefault)
+    await showPoteto($, await loadPoteto($, isPotetoDefault))
     await loadSkills($)
 
     return next(e)
+  })
+
+  on('session.attach', async ($, e, next) => {
+    const result = await next(e)
+    await showPoteto($, await read($, poteto))
+
+    return result
   })
 
   on('command.run', { command: 'poteto' }, async $ => {
     const isOn = !(await loadPoteto($, isPotetoDefault))
     await $.store.set(storeKey(await $.session.root()), isOn)
     await update($, poteto, () => isOn)
+    await showPoteto($, isOn)
+    $.ui.toast(isOn ? 'poteto mode on' : 'poteto mode off')
 
-    return { text: isOn ? 'poteto mode on' : 'poteto mode off' }
+    return {}
   })
 
   on('command.run', { command: 'pstack' }, async $ => {

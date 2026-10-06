@@ -1,4 +1,4 @@
-import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput } from 'claude-code'
+import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput, RenderSurface } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
@@ -166,9 +166,21 @@ function entry(name: string, kind: 'file' | 'dir'): FsEntry {
   return { name, kind, size: 0, mtimeMs: 0, isLink: false }
 }
 
-// A session in PROJECT whose store starts with `stored`
-async function session($: Engine, on: On, stored: Record<string, unknown> = {}, filled: string[] = []): Promise<void> {
+type Shown = { toasts: string[]; statuses: (string | undefined)[] }
+
+// A session in PROJECT whose store starts with `stored`; returns the toasts and status lines it shows
+async function session(
+  $: Engine,
+  on: On,
+  stored: Record<string, unknown> = {},
+  filled: string[] = [],
+  surfaces: RenderSurface[] = ['terminal'],
+): Promise<Shown> {
+  const shown: Shown = { toasts: [], statuses: [] }
   engine(on)
+  on('session.surfaces', async () => ({ value: surfaces }))
+  on('ui.status', async (_$, e) => (shown.statuses.push(e.text), { value: undefined }))
+  on('ui.toast', async (_$, e) => (shown.toasts.push(e.text), { value: undefined }))
   mock.store(on, stored)
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('session.root', async () => ({ value: PROJECT }))
@@ -190,6 +202,8 @@ async function session($: Engine, on: On, stored: Record<string, unknown> = {}, 
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
   on('command.run', async () => ({ text: 'engine' }))
   await $.session.start({ cwd: PROJECT, surface: 'terminal', isInteractive: true })
+
+  return shown
 }
 
 // Records the footer labels that reach the engine; registered before the test's first $ call
@@ -218,7 +232,7 @@ describe('poteto mode', () => {
   })
 
   test('/poteto toggles the reminder on plain prompts', async ($, on) => {
-    await session($, on)
+    const { toasts } = await session($, on)
 
     const off = await $.prompt.submit(typed('fix the login bug'))
     const turnedOn = await $.command.run(typedCommand('poteto'))
@@ -228,11 +242,12 @@ describe('poteto mode', () => {
     const off2 = await $.prompt.submit(typed('fix the login bug'))
 
     expect(off.context).toBeUndefined()
-    expect(turnedOn.text).toBe('poteto mode on')
+    expect(turnedOn.text).toBeUndefined()
     expect(on1.context?.[0]).toContain('Poteto mode is on. New task? Apply it.')
     expect(command.context).toBeUndefined()
-    expect(turnedOff.text).toBe('poteto mode off')
+    expect(turnedOff.text).toBeUndefined()
     expect(off2.context).toBeUndefined()
+    expect(toasts).toEqual(['poteto mode on', 'poteto mode off'])
   })
 
   test('remembers the choice per project', async ($, on) => {
@@ -261,6 +276,23 @@ describe('poteto mode', () => {
 
     expect(before).toEqual(['focus'])
     expect(after).toEqual(['focus', '♛ poteto'])
+  })
+
+  test('the app shows the label as a status line while on', async ($, on) => {
+    const { statuses } = await session($, on, {}, [], ['desktop'])
+
+    await $.command.run(typedCommand('poteto'))
+    await $.command.run(typedCommand('poteto'))
+
+    expect(statuses).toEqual([undefined, '♛ poteto', undefined])
+  })
+
+  test('the terminal keeps the label in the footer alone', async ($, on) => {
+    const { statuses } = await session($, on)
+
+    await $.command.run(typedCommand('poteto'))
+
+    expect(statuses).toEqual([undefined, undefined])
   })
 })
 
