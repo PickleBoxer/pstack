@@ -292,19 +292,25 @@ describe('/pstack pane', () => {
     ])
   })
 
-  test('lists skills by group and fills the prompt on press', async ($, on) => {
+  test('shows groups as tabs, the pressed tab skills below, and fills the prompt on press', async ($, on) => {
     const filled: string[] = []
     await session($, on, {}, filled)
 
     for (const surface of ['terminal', 'desktop'] as const) {
       const ui = await $.ui.mount({ plugin: 'pstack', surface, component: 'Pane', requestId: 'pstack', props: PANE_PROPS })
 
-      expect(await ui.find({ type: 'Text', text: 'Start here' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: 'Other' })).toBeDefined()
+      expect((await ui.find({ key: 'group-Start here' }))?.text).toBe('Start here')
+      expect((await ui.find({ key: 'group-Other' }))?.text).toBe('Other')
+      expect(await ui.find({ key: 'run-poteto-mode' })).toBeDefined()
+      expect(await ui.find({ key: 'run-how' })).toBeUndefined()
+
+      await ui.press({ key: 'group-Understand' })
       expect(await ui.find({ type: 'Text', text: 'About how' })).toBeDefined()
+      expect(await ui.find({ key: 'run-poteto-mode' })).toBeUndefined()
       expect(await ui.find({ key: 'run-notes.md' })).toBeUndefined()
 
       await ui.press({ key: 'run-how' })
+      await ui.press({ key: 'group-Start here' })
       await ui.unmount()
     }
 
@@ -315,6 +321,7 @@ describe('/pstack pane', () => {
     const stored: Record<string, unknown> = {}
     await session($, on, stored)
     const ui = await $.ui.mount({ plugin: 'pstack', surface: 'terminal', component: 'Pane', requestId: 'pstack', props: PANE_PROPS })
+    await ui.press({ key: 'group-Understand' })
 
     const before = await $.command.describe(describeInput('pstack:how'))
     await ui.press({ key: 'hide-how' })

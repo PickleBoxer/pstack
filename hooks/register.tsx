@@ -14,6 +14,7 @@ const HIDDEN_KEY = 'hidden'
 const poteto = atom({ plugin: 'pstack', key: 'poteto' } as const, false)
 const skills = atom({ plugin: 'pstack', key: 'skills' } as const, [])
 const hidden = atom({ plugin: 'pstack', key: 'hidden' } as const, [])
+const group = atom({ plugin: 'pstack', key: 'group' } as const, '')
 
 // Mirrors the project's stored choice into session state, which prompt.submit reads
 async function loadPoteto($: EngineInterface, isDefault: boolean): Promise<boolean> {
@@ -164,45 +165,72 @@ export const register: Register = (on, options) => {
     const all = await read($, skills)
     const hiddenNames = await read($, hidden)
 
-    if (all.length === 0) {
+    const groups = grouped(all)
+    const chosen = await read($, group)
+    const selected = groups.find(one => one.title === chosen) ?? groups[0]
+
+    if (selected === undefined) {
       return <Text dimColor>No pstack skills found under {$.plugin.root}/skills.</Text>
     }
 
     return (
       <Box flexDirection="column">
-        <Text dimColor>Press a skill to put it in the prompt. Hidden skills stay out of the / menu but still run when typed.</Text>
-        {grouped(all).map(group => (
-          <Box key={group.title} flexDirection="column" marginTop={1}>
-            <Text bold>{group.title}</Text>
-            {group.skills.map(skill => {
-              const isHidden = hiddenNames.includes(skill.name)
+        <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+          {groups.map((one, index) => {
+            const isSelected = one.title === selected.title
+            const hotkey = index < 9 ? String(index + 1) : undefined
+            // The terminal draws a plain Button with a hotkey as `1: label`
+            const width = (hotkey === undefined ? 0 : hotkey.length + 2) + one.title.length
 
-              return (
-                <Box key={skill.name} flexDirection="row" gap={1}>
-                  <Button
-                    key={`run-${skill.name}`}
-                    plain
-                    dimColor={isHidden}
-                    label={`/${skill.name}`}
-                    onPress={() => void $.prompt.fill({ text: `/pstack:${skill.name} `, mode: 'replace' })}
-                  />
-                  <Box flexGrow={1} flexShrink={1} overflow="hidden">
-                    <Text dimColor wrap="truncate-end">
-                      {skill.description}
-                    </Text>
-                  </Box>
-                  <Button
-                    key={`hide-${skill.name}`}
-                    plain
-                    dimColor
-                    label={isHidden ? 'show' : 'hide'}
-                    onPress={() => void toggleHidden($, skill.name)}
-                  />
+            return (
+              <Box key={`tab-${one.title}`} flexDirection="column">
+                <Button
+                  key={`group-${one.title}`}
+                  plain
+                  hotkey={hotkey}
+                  dimColor={!isSelected}
+                  label={one.title}
+                  onPress={() => void update($, group, () => one.title)}
+                />
+                <Text color={isSelected ? 'suggestion' : undefined} dimColor={!isSelected}>
+                  {(isSelected ? '━' : '─').repeat(width)}
+                </Text>
+              </Box>
+            )
+          })}
+        </Box>
+        <Box flexDirection="column" marginTop={1}>
+          {selected.skills.map(skill => {
+            const isHidden = hiddenNames.includes(skill.name)
+
+            return (
+              <Box key={skill.name} flexDirection="row" gap={1}>
+                <Button
+                  key={`run-${skill.name}`}
+                  plain
+                  dimColor={isHidden}
+                  label={`/${skill.name}`}
+                  onPress={() => void $.prompt.fill({ text: `/pstack:${skill.name} `, mode: 'replace' })}
+                />
+                <Box flexGrow={1} flexShrink={1} overflow="hidden">
+                  <Text dimColor wrap="truncate-end">
+                    {skill.description}
+                  </Text>
                 </Box>
-              )
-            })}
-          </Box>
-        ))}
+                <Button
+                  key={`hide-${skill.name}`}
+                  plain
+                  dimColor
+                  label={isHidden ? 'show' : 'hide'}
+                  onPress={() => void toggleHidden($, skill.name)}
+                />
+              </Box>
+            )
+          })}
+        </Box>
+        <Box marginTop={1}>
+          <Text dimColor>Press a tab or its number, then a skill to put it in the prompt. Hidden skills stay out of the / menu but still run when typed.</Text>
+        </Box>
       </Box>
     )
   })

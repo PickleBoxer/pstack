@@ -11,6 +11,8 @@ declare module 'claude-code' {
       skills: PstackSkill[]
       // Skill names hidden from the / menu, mirrored from $.store
       hidden: string[]
+      // The group the /pstack pane shows on the right; '' is the first group
+      group: string
     }
   }
 }
