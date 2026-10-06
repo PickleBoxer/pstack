@@ -1,4 +1,4 @@
-import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput } from 'claude-code'
+import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput, RenderSurface } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
@@ -166,12 +166,20 @@ function entry(name: string, kind: 'file' | 'dir'): FsEntry {
   return { name, kind, size: 0, mtimeMs: 0, isLink: false }
 }
 
-type Shown = { toasts: string[] }
+type Shown = { toasts: string[]; statuses: (string | undefined)[] }
 
-// A session in PROJECT whose store starts with `stored`; returns the toasts it shows
-async function session($: Engine, on: On, stored: Record<string, unknown> = {}, filled: string[] = []): Promise<Shown> {
-  const shown: Shown = { toasts: [] }
+// A session in PROJECT whose store starts with `stored`; returns the toasts and status lines it shows
+async function session(
+  $: Engine,
+  on: On,
+  stored: Record<string, unknown> = {},
+  filled: string[] = [],
+  surfaces: RenderSurface[] = ['terminal'],
+): Promise<Shown> {
+  const shown: Shown = { toasts: [], statuses: [] }
   engine(on)
+  on('session.surfaces', async () => ({ value: surfaces }))
+  on('ui.status', async (_$, e) => (shown.statuses.push(e.text), { value: undefined }))
   on('ui.toast', async (_$, e) => (shown.toasts.push(e.text), { value: undefined }))
   mock.store(on, stored)
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
@@ -256,6 +264,23 @@ describe('poteto mode', () => {
 
       await $.command.run(typedCommand('poteto'))
     }
+  })
+
+  test('the app shows poteto on and off as a status line', async ($, on) => {
+    const { statuses } = await session($, on, {}, [], ['desktop'])
+
+    await $.command.run(typedCommand('poteto'))
+    await $.command.run(typedCommand('poteto'))
+
+    expect(statuses).toEqual(['♔ poteto off', '♛ poteto on', '♔ poteto off'])
+  })
+
+  test('the terminal leaves the status line to the footer', async ($, on) => {
+    const { statuses } = await session($, on)
+
+    await $.command.run(typedCommand('poteto'))
+
+    expect(statuses).toEqual([undefined, undefined])
   })
 })
 
