@@ -17,5 +17,5 @@ jobs:
       # plugin test runs every *.test.ts under the folder, and upstream's bun tests under skills/ cannot load there
       - run: |
           mkdir "$RUNNER_TEMP/mod"
-          cp -R .claude-plugin hooks tests tsconfig.json "$RUNNER_TEMP/mod/"
+          cp -R .claude-plugin hooks tests types tsconfig.json "$RUNNER_TEMP/mod/"
           npx -y @anthropic-ai/claude-code plugin test "$RUNNER_TEMP/mod"

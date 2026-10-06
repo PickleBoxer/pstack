@@ -18,26 +18,45 @@
     "subagents",
     "verification"
   ],
+  "types": "./types/index.d.ts",
   "userConfig": {
     "search_model": {
       "type": "string",
       "title": "Search model",
       "description": "Model for pstack read-only searches and the recall fan-out",
-      "options": ["haiku", "sonnet", "opus", "fable", "inherit"],
+      "options": [
+        "haiku",
+        "sonnet",
+        "opus",
+        "fable",
+        "inherit"
+      ],
       "default": "haiku"
     },
     "code_model": {
       "type": "string",
       "title": "Code model",
       "description": "Model for pstack code delegates (upstream uses Grok here)",
-      "options": ["sonnet", "opus", "fable", "haiku", "inherit"],
+      "options": [
+        "sonnet",
+        "opus",
+        "fable",
+        "haiku",
+        "inherit"
+      ],
       "default": "sonnet"
     },
     "judgment_model": {
       "type": "string",
       "title": "Judgment model",
       "description": "Model for pstack judgment, prose and the hardest changes (upstream uses Opus)",
-      "options": ["opus", "fable", "sonnet", "haiku", "inherit"],
+      "options": [
+        "opus",
+        "fable",
+        "sonnet",
+        "haiku",
+        "inherit"
+      ],
       "default": "opus"
     },
     "poteto_default": {
