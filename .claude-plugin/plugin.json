@@ -1,0 +1,50 @@
+{
+  "name": "pstack",
+  "displayName": "pstack",
+  "version": "0.15.15+claude.1",
+  "description": "poteto's rigorous engineering skills (poteto-mode, how/why, architect, verification), ported from Cursor and kept in sync with upstream",
+  "author": {
+    "name": "PickleBoxer"
+  },
+  "homepage": "https://github.com/PickleBoxer/pstack",
+  "repository": "https://github.com/PickleBoxer/pstack",
+  "license": "MIT",
+  "keywords": [
+    "pstack",
+    "poteto-mode",
+    "skills",
+    "workflow",
+    "principles",
+    "subagents",
+    "verification"
+  ],
+  "userConfig": {
+    "search_model": {
+      "type": "string",
+      "title": "Search model",
+      "description": "Model for pstack read-only searches and the recall fan-out",
+      "options": ["haiku", "sonnet", "opus", "fable", "inherit"],
+      "default": "haiku"
+    },
+    "code_model": {
+      "type": "string",
+      "title": "Code model",
+      "description": "Model for pstack code delegates (upstream uses Grok here)",
+      "options": ["sonnet", "opus", "fable", "haiku", "inherit"],
+      "default": "sonnet"
+    },
+    "judgment_model": {
+      "type": "string",
+      "title": "Judgment model",
+      "description": "Model for pstack judgment, prose and the hardest changes (upstream uses Opus)",
+      "options": ["opus", "fable", "sonnet", "haiku", "inherit"],
+      "default": "opus"
+    },
+    "poteto_default": {
+      "type": "boolean",
+      "title": "Poteto mode on by default",
+      "description": "Start new projects with /poteto mode pinned",
+      "default": false
+    }
+  }
+}
