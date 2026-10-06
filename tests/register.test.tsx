@@ -1,7 +1,8 @@
-import type { AgentSpawnInput, On, PromptSubmitInput } from 'claude-code'
-import { describe, expect, test } from 'claude-code/testing'
+import type { AgentSpawnInput, CommandRunInput, On, PromptSubmitInput } from 'claude-code'
+import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
+import { reminderFrom } from '../hooks/poteto'
 import { agentModel, agentType, harnessNote, modelsFrom } from '../hooks/translate'
 
 const DEFAULTS = modelsFrom({})
@@ -9,6 +10,10 @@ const DEFAULTS = modelsFrom({})
 // Full engine inputs, as a session raises them
 function typed(text: string): PromptSubmitInput {
   return { text, wait: false, origin: { kind: 'composer' } }
+}
+
+function typedCommand(command: string): CommandRunInput {
+  return { command, args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }
 }
 
 function spawn(subagentType: string, model: string): AgentSpawnInput {
@@ -150,5 +155,92 @@ describe('agent.spawn', () => {
     await $.agent.spawn(spawn('general-purpose', 'claude-opus-5-5-xhigh'))
 
     expect(spawned.map(e => e.model)).toEqual(['haiku', 'fable'])
+  })
+})
+
+const POTETO_SKILL = '---\nname: Poteto Mode\nmode: true\nreminder: New task? Apply it.\n---\n\n# Poteto mode\n'
+const PROJECT = '/work/app'
+
+// A session in PROJECT whose store starts with `stored`
+async function session($: Engine, on: On, stored: Record<string, unknown> = {}): Promise<void> {
+  engine(on)
+  mock.store(on, stored)
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  on('session.root', async () => ({ value: PROJECT }))
+  on('fs.read', async () => ({ value: POTETO_SKILL }))
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('command.run', async () => ({ text: 'engine' }))
+  await $.session.start({ cwd: PROJECT, surface: 'terminal', isInteractive: true })
+}
+
+// Records the footer labels that reach the engine; registered before the test's first $ call
+function footer(on: On): ($: Engine) => Promise<readonly string[]> {
+  let modes: readonly string[] = []
+  on('ui.render', async ($, e) => {
+    if (e.component === 'SessionMode') {
+      modes = e.props.modes
+    }
+    const { Text } = $.ui.resolve(e)
+
+    return <Text>footer</Text>
+  })
+
+  return async $ => {
+    await $.ui.render({ surface: 'terminal', component: 'SessionMode', requestId: 'mode', props: { modes: ['focus'] } })
+
+    return modes
+  }
+}
+
+describe('poteto mode', () => {
+  test('reads the reminder from poteto-mode frontmatter', () => {
+    expect(reminderFrom(POTETO_SKILL)).toBe('New task? Apply it.')
+    expect(reminderFrom('# no frontmatter')).toContain('apply /poteto-mode')
+  })
+
+  test('/poteto toggles the reminder on plain prompts', async ($, on) => {
+    await session($, on)
+
+    const off = await $.prompt.submit(typed('fix the login bug'))
+    const turnedOn = await $.command.run(typedCommand('poteto'))
+    const on1 = await $.prompt.submit(typed('fix the login bug'))
+    const command = await $.prompt.submit(typed('/clear'))
+    const turnedOff = await $.command.run(typedCommand('poteto'))
+    const off2 = await $.prompt.submit(typed('fix the login bug'))
+
+    expect(off.context).toBeUndefined()
+    expect(turnedOn.text).toBe('poteto mode on')
+    expect(on1.context?.[0]).toContain('Poteto mode is on. New task? Apply it.')
+    expect(command.context).toBeUndefined()
+    expect(turnedOff.text).toBe('poteto mode off')
+    expect(off2.context).toBeUndefined()
+  })
+
+  test('remembers the choice per project', async ($, on) => {
+    await session($, on, { [`poteto:${PROJECT}`]: true, 'poteto:/other': false })
+
+    const prompt = await $.prompt.submit(typed('fix the login bug'))
+
+    expect(prompt.context?.[0]).toContain('Poteto mode is on')
+  })
+
+  test('poteto_default turns it on for projects with no choice yet', { options: { poteto_default: true } }, async ($, on) => {
+    await session($, on)
+
+    const prompt = await $.prompt.submit(typed('fix the login bug'))
+
+    expect(prompt.context?.[0]).toContain('Poteto mode is on')
+  })
+
+  test('the footer shows the label only while on', async ($, on) => {
+    const draw = footer(on)
+    await session($, on)
+
+    const before = await draw($)
+    await $.command.run(typedCommand('poteto'))
+    const after = await draw($)
+
+    expect(before).toEqual(['focus'])
+    expect(after).toEqual(['focus', '♛ poteto'])
   })
 })
