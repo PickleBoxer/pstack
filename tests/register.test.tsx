@@ -246,10 +246,10 @@ describe('poteto mode', () => {
     for (const surface of ['terminal', 'desktop'] as const) {
       const footer = await $.ui.mount({ plugin: 'pstack', surface, component: 'SessionMode', requestId: 'mode', props })
       expect(await footer.find({ type: 'Text', text: 'focus & ' })).toBeDefined()
-      expect((await footer.find({ key: 'poteto' }))?.text).toBe('♔ poteto off')
+      expect(await footer.find({ type: 'Text', text: ' ♛ off' })).toBeDefined()
 
       await footer.press({ key: 'poteto' })
-      expect((await footer.find({ key: 'poteto' }))?.text).toBe('♛ poteto on')
+      expect(await footer.find({ type: 'Text', text: ' ♛ on' })).toBeDefined()
       expect((await $.prompt.submit(typed('fix the login bug'))).context?.[0]).toContain('Poteto mode is on')
 
       await footer.press({ key: 'poteto' })

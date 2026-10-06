@@ -147,11 +147,14 @@ export const register: Register = (on, options) => {
         ))}
         <Button
           key="poteto"
-          plain
+          variant="primary"
           dimColor={!isOn}
-          label={isOn ? '♛ poteto on' : '♔ poteto off'}
+          label="poteto"
           onPress={() => void togglePoteto($, isPotetoDefault)}
         />
+        <Text color={isOn ? 'success' : undefined} dimColor={!isOn}>
+          {isOn ? ' ♛ on' : ' ♛ off'}
+        </Text>
       </Box>
     )
   })
