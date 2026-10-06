@@ -195,6 +195,7 @@ async function session($: Engine, on: On, stored: Record<string, unknown> = {}, 
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
   on('command.run', async () => ({ text: 'engine' }))
   on('prompt.compose', async () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' as const }] }))
+  on('session.compact', async (_$, e) => ({ messages: e.messages }))
   await $.session.start({ cwd: PROJECT, surface: 'terminal', isInteractive: true })
 
   return shown
@@ -322,6 +323,35 @@ describe('/pstack pane', () => {
     }
 
     expect(filled).toEqual(['/pstack:how ', '/pstack:how '])
+  })
+
+  test('the Loaded tab lists the pinned poteto-mode and skills read or run, until compaction', async ($, on) => {
+    await session($, on, { [`poteto:${PROJECT}`]: true })
+    const root = await pluginRoot($)
+    await $.tool.call({ tool: 'Read', file_path: `${root}/skills/principle-prove-it-works/SKILL.md` })
+    const ui = await $.ui.mount({ plugin: 'pstack', surface: 'terminal', component: 'Pane', requestId: 'pstack', props: PANE_PROPS })
+
+    await ui.press({ key: 'group-Understand' })
+    const dot = await ui.find({ type: 'Text', text: '●' })
+    await ui.press({ key: 'group-Loaded' })
+    const label = (await ui.find({ key: 'group-Loaded' }))?.text
+    const pinned = await ui.find({ type: 'Text', text: 'pinned while poteto is on' })
+    const run = await ui.find({ key: 'run-how' })
+    const readOne = await ui.find({ key: 'run-principle-prove-it-works' })
+
+    await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
+    const afterLabel = (await ui.find({ key: 'group-Loaded' }))?.text
+    const afterRun = await ui.find({ key: 'run-how' })
+    await ui.press({ key: 'group-Start here' })
+    await ui.unmount()
+
+    expect(dot).toBeDefined()
+    expect(label).toBe('Loaded 3')
+    expect(pinned).toBeDefined()
+    expect(run).toBeDefined()
+    expect(readOne).toBeDefined()
+    expect(afterLabel).toBe('Loaded 1')
+    expect(afterRun).toBeUndefined()
   })
 
   test('hide removes a skill from the / menu and remembers it', async ($, on) => {
