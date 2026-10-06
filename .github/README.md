@@ -45,6 +45,18 @@ Skills that use other skills read them from the plugin directly, so the dependen
 | show-me-your-work, technical-writing | unslop | |
 | maintain-verification-skill | a skill made by create-verification-skill | |
 
+### Keep a verification skill fresh
+
+Run `/pstack:create-verification-skill` once in your project. It writes a project-local verify skill with a feature map of your app.
+
+The feature map drifts as the app changes, so schedule `/pstack:maintain-verification-skill` to run on its own. In the Claude desktop app, create a scheduled task in the Code tab that runs daily in your project folder with this prompt:
+
+```text
+/pstack:maintain-verification-skill
+```
+
+Each run reads every feature from source, drives each one live, and opens at most one PR of proven corrections.
+
 ## Models
 
 Upstream pairs Grok (code) with Opus (judgment). Here the models are plugin options, prompted on install and editable from `/plugin`:
