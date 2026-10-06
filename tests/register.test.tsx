@@ -1,4 +1,4 @@
-import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput, RenderSurface } from 'claude-code'
+import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
@@ -166,20 +166,12 @@ function entry(name: string, kind: 'file' | 'dir'): FsEntry {
   return { name, kind, size: 0, mtimeMs: 0, isLink: false }
 }
 
-type Shown = { toasts: string[]; statuses: (string | undefined)[] }
+type Shown = { toasts: string[] }
 
-// A session in PROJECT whose store starts with `stored`; returns the toasts and status lines it shows
-async function session(
-  $: Engine,
-  on: On,
-  stored: Record<string, unknown> = {},
-  filled: string[] = [],
-  surfaces: RenderSurface[] = ['terminal'],
-): Promise<Shown> {
-  const shown: Shown = { toasts: [], statuses: [] }
+// A session in PROJECT whose store starts with `stored`; returns the toasts it shows
+async function session($: Engine, on: On, stored: Record<string, unknown> = {}, filled: string[] = []): Promise<Shown> {
+  const shown: Shown = { toasts: [] }
   engine(on)
-  on('session.surfaces', async () => ({ value: surfaces }))
-  on('ui.status', async (_$, e) => (shown.statuses.push(e.text), { value: undefined }))
   on('ui.toast', async (_$, e) => (shown.toasts.push(e.text), { value: undefined }))
   mock.store(on, stored)
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
@@ -204,25 +196,6 @@ async function session(
   await $.session.start({ cwd: PROJECT, surface: 'terminal', isInteractive: true })
 
   return shown
-}
-
-// Records the footer labels that reach the engine; registered before the test's first $ call
-function footer(on: On): ($: Engine) => Promise<readonly string[]> {
-  let modes: readonly string[] = []
-  on('ui.render', async ($, e) => {
-    if (e.component === 'SessionMode') {
-      modes = e.props.modes
-    }
-    const { Text } = $.ui.resolve(e)
-
-    return <Text>footer</Text>
-  })
-
-  return async $ => {
-    await $.ui.render({ surface: 'terminal', component: 'SessionMode', requestId: 'mode', props: { modes: ['focus'] } })
-
-    return modes
-  }
 }
 
 describe('poteto mode', () => {
@@ -266,33 +239,23 @@ describe('poteto mode', () => {
     expect(prompt.context?.[0]).toContain('Poteto mode is on')
   })
 
-  test('the footer shows the label only while on', async ($, on) => {
-    const draw = footer(on)
+  test('the footer shows poteto on and off after the other modes', async ($, on) => {
     await session($, on)
 
-    const before = await draw($)
-    await $.command.run(typedCommand('poteto'))
-    const after = await draw($)
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const props = { modes: ['focus'] }
+      const off = await $.ui.mount({ plugin: 'pstack', surface, component: 'SessionMode', requestId: 'mode', props })
+      expect(await off.find({ type: 'Text', text: 'focus & ' })).toBeDefined()
+      expect(await off.find({ type: 'Text', text: '♔ poteto off' })).toBeDefined()
+      await off.unmount()
 
-    expect(before).toEqual(['focus'])
-    expect(after).toEqual(['focus', '♛ poteto'])
-  })
+      await $.command.run(typedCommand('poteto'))
+      const on1 = await $.ui.mount({ plugin: 'pstack', surface, component: 'SessionMode', requestId: 'mode', props })
+      expect(await on1.find({ type: 'Text', text: '♛ poteto on' })).toBeDefined()
+      await on1.unmount()
 
-  test('the app shows the label as a status line while on', async ($, on) => {
-    const { statuses } = await session($, on, {}, [], ['desktop'])
-
-    await $.command.run(typedCommand('poteto'))
-    await $.command.run(typedCommand('poteto'))
-
-    expect(statuses).toEqual([undefined, '♛ poteto', undefined])
-  })
-
-  test('the terminal keeps the label in the footer alone', async ($, on) => {
-    const { statuses } = await session($, on)
-
-    await $.command.run(typedCommand('poteto'))
-
-    expect(statuses).toEqual([undefined, undefined])
+      await $.command.run(typedCommand('poteto'))
+    }
   })
 })
 

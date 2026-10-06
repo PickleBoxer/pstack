@@ -8,7 +8,6 @@ import { agentModel, agentType, harnessNote, modelsFrom } from './translate'
 
 // The org's security plugin can bypass user-tier skill.prompt hooks, so the note rides prompt.submit and Read instead
 const PSTACK_COMMAND = /^\/pstack:\S/
-const LABEL = '♛ poteto'
 const PANE = 'pstack'
 const HIDDEN_KEY = 'hidden'
 
@@ -16,19 +15,13 @@ const poteto = atom({ plugin: 'pstack', key: 'poteto' } as const, false)
 const skills = atom({ plugin: 'pstack', key: 'skills' } as const, [])
 const hidden = atom({ plugin: 'pstack', key: 'hidden' } as const, [])
 
-// Mirrors the project's stored choice into session state, which the footer draws from
+// Mirrors the project's stored choice into session state, which prompt.submit reads
 async function loadPoteto($: EngineInterface, isDefault: boolean): Promise<boolean> {
   const stored = await $.store.get(storeKey(await $.session.root()))
   const isOn = typeof stored === 'boolean' ? stored : isDefault
   await update($, poteto, () => isOn)
 
   return isOn
-}
-
-// The app surfaces leave SessionMode undrawn, so the label also pins there as a status line
-async function showPoteto($: EngineInterface, isOn: boolean): Promise<void> {
-  const isInApp = (await $.session.surfaces()).some(surface => surface !== 'terminal')
-  $.ui.status(isOn && isInApp ? LABEL : undefined)
 }
 
 // Every folder under skills/ with its frontmatter description, read once per session
@@ -65,24 +58,16 @@ export const register: Register = (on, options) => {
     reminder = reminderFrom(String(await $.fs.read(`${$.plugin.root}/skills/poteto-mode/SKILL.md`).catch(() => '')))
     await $.command.register({ name: 'poteto', description: 'Toggle poteto mode for this project' })
     await $.command.register({ name: 'pstack', description: 'Browse, run and hide pstack skills' })
-    await showPoteto($, await loadPoteto($, isPotetoDefault))
+    await loadPoteto($, isPotetoDefault)
     await loadSkills($)
 
     return next(e)
-  })
-
-  on('session.attach', async ($, e, next) => {
-    const result = await next(e)
-    await showPoteto($, await read($, poteto))
-
-    return result
   })
 
   on('command.run', { command: 'poteto' }, async $ => {
     const isOn = !(await loadPoteto($, isPotetoDefault))
     await $.store.set(storeKey(await $.session.root()), isOn)
     await update($, poteto, () => isOn)
-    await showPoteto($, isOn)
     $.ui.toast(isOn ? 'poteto mode on' : 'poteto mode off')
 
     return {}
@@ -144,10 +129,29 @@ export const register: Register = (on, options) => {
     next({ ...e, subagentType: agentType(e.subagentType), model: agentModel(e.model, models) }),
   )
 
-  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+  // Draws the footer's modes itself so the poteto label can carry its own color, on or off
+  on('ui.render', { component: 'SessionMode' }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
     const isOn = await read($, poteto)
 
-    return isOn ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, LABEL] } }) : next(e)
+    return (
+      <Box flexDirection="row">
+        {e.props.modes.map(mode => (
+          <Text key={mode} dimColor>
+            {mode} &{' '}
+          </Text>
+        ))}
+        {isOn ? (
+          <Text key="poteto" color="warning" bold>
+            ♛ poteto on
+          </Text>
+        ) : (
+          <Text key="poteto" dimColor>
+            ♔ poteto off
+          </Text>
+        )}
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
