@@ -1,4 +1,4 @@
-import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput, RenderSurface } from 'claude-code'
+import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
@@ -166,20 +166,12 @@ function entry(name: string, kind: 'file' | 'dir'): FsEntry {
   return { name, kind, size: 0, mtimeMs: 0, isLink: false }
 }
 
-type Shown = { toasts: string[]; statuses: (string | undefined)[] }
+type Shown = { toasts: string[] }
 
-// A session in PROJECT whose store starts with `stored`; returns the toasts and status lines it shows
-async function session(
-  $: Engine,
-  on: On,
-  stored: Record<string, unknown> = {},
-  filled: string[] = [],
-  surfaces: RenderSurface[] = ['terminal'],
-): Promise<Shown> {
-  const shown: Shown = { toasts: [], statuses: [] }
+// A session in PROJECT whose store starts with `stored`; returns the toasts it shows
+async function session($: Engine, on: On, stored: Record<string, unknown> = {}, filled: string[] = []): Promise<Shown> {
+  const shown: Shown = { toasts: [] }
   engine(on)
-  on('session.surfaces', async () => ({ value: surfaces }))
-  on('ui.status', async (_$, e) => (shown.statuses.push(e.text), { value: undefined }))
   on('ui.toast', async (_$, e) => (shown.toasts.push(e.text), { value: undefined }))
   mock.store(on, stored)
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
@@ -247,40 +239,24 @@ describe('poteto mode', () => {
     expect(prompt.context?.[0]).toContain('Poteto mode is on')
   })
 
-  test('the footer shows poteto on and off after the other modes', async ($, on) => {
-    await session($, on)
+  test('the footer shows poteto on and off after the other modes and toggles on press', async ($, on) => {
+    const { toasts } = await session($, on)
+    const props = { modes: ['focus'] }
 
     for (const surface of ['terminal', 'desktop'] as const) {
-      const props = { modes: ['focus'] }
-      const off = await $.ui.mount({ plugin: 'pstack', surface, component: 'SessionMode', requestId: 'mode', props })
-      expect(await off.find({ type: 'Text', text: 'focus & ' })).toBeDefined()
-      expect(await off.find({ type: 'Text', text: '♔ poteto off' })).toBeDefined()
-      await off.unmount()
+      const footer = await $.ui.mount({ plugin: 'pstack', surface, component: 'SessionMode', requestId: 'mode', props })
+      expect(await footer.find({ type: 'Text', text: 'focus & ' })).toBeDefined()
+      expect((await footer.find({ key: 'poteto' }))?.text).toBe('♔ poteto off')
 
-      await $.command.run(typedCommand('poteto'))
-      const on1 = await $.ui.mount({ plugin: 'pstack', surface, component: 'SessionMode', requestId: 'mode', props })
-      expect(await on1.find({ type: 'Text', text: '♛ poteto on' })).toBeDefined()
-      await on1.unmount()
+      await footer.press({ key: 'poteto' })
+      expect((await footer.find({ key: 'poteto' }))?.text).toBe('♛ poteto on')
+      expect((await $.prompt.submit(typed('fix the login bug'))).context?.[0]).toContain('Poteto mode is on')
 
-      await $.command.run(typedCommand('poteto'))
+      await footer.press({ key: 'poteto' })
+      await footer.unmount()
     }
-  })
 
-  test('the app shows poteto on and off as a status line', async ($, on) => {
-    const { statuses } = await session($, on, {}, [], ['desktop'])
-
-    await $.command.run(typedCommand('poteto'))
-    await $.command.run(typedCommand('poteto'))
-
-    expect(statuses).toEqual(['♔ poteto off', '♛ poteto on', '♔ poteto off'])
-  })
-
-  test('the terminal leaves the status line to the footer', async ($, on) => {
-    const { statuses } = await session($, on)
-
-    await $.command.run(typedCommand('poteto'))
-
-    expect(statuses).toEqual([undefined, undefined])
+    expect(toasts).toEqual(['poteto mode on', 'poteto mode off', 'poteto mode on', 'poteto mode off'])
   })
 })
 

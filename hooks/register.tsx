@@ -24,10 +24,11 @@ async function loadPoteto($: EngineInterface, isDefault: boolean): Promise<boole
   return isOn
 }
 
-// The desktop app leaves the footer modes undrawn, so app surfaces get the status line instead
-async function showPoteto($: EngineInterface, isOn: boolean): Promise<void> {
-  const isInApp = (await $.session.surfaces()).some(surface => surface !== 'terminal')
-  $.ui.status(isInApp ? (isOn ? '♛ poteto on' : '♔ poteto off') : undefined)
+async function togglePoteto($: EngineInterface, isDefault: boolean): Promise<void> {
+  const isOn = !(await loadPoteto($, isDefault))
+  await $.store.set(storeKey(await $.session.root()), isOn)
+  await update($, poteto, () => isOn)
+  $.ui.toast(isOn ? 'poteto mode on' : 'poteto mode off')
 }
 
 // Every folder under skills/ with its frontmatter description, read once per session
@@ -64,25 +65,14 @@ export const register: Register = (on, options) => {
     reminder = reminderFrom(String(await $.fs.read(`${$.plugin.root}/skills/poteto-mode/SKILL.md`).catch(() => '')))
     await $.command.register({ name: 'poteto', description: 'Toggle poteto mode for this project' })
     await $.command.register({ name: 'pstack', description: 'Browse, run and hide pstack skills' })
-    await showPoteto($, await loadPoteto($, isPotetoDefault))
+    await loadPoteto($, isPotetoDefault)
     await loadSkills($)
 
     return next(e)
   })
 
-  on('session.attach', async ($, e, next) => {
-    const result = await next(e)
-    await showPoteto($, await read($, poteto))
-
-    return result
-  })
-
   on('command.run', { command: 'poteto' }, async $ => {
-    const isOn = !(await loadPoteto($, isPotetoDefault))
-    await $.store.set(storeKey(await $.session.root()), isOn)
-    await update($, poteto, () => isOn)
-    await showPoteto($, isOn)
-    $.ui.toast(isOn ? 'poteto mode on' : 'poteto mode off')
+    await togglePoteto($, isPotetoDefault)
 
     return {}
   })
@@ -143,9 +133,9 @@ export const register: Register = (on, options) => {
     next({ ...e, subagentType: agentType(e.subagentType), model: agentModel(e.model, models) }),
   )
 
-  // Draws the footer's modes itself so the poteto label can carry its own color, on or off
+  // Draws the footer's modes itself: the desktop skips plain mode labels, and the poteto one is a toggle
   on('ui.render', { component: 'SessionMode' }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const isOn = await read($, poteto)
 
     return (
@@ -155,15 +145,13 @@ export const register: Register = (on, options) => {
             {mode} &{' '}
           </Text>
         ))}
-        {isOn ? (
-          <Text key="poteto" color="warning" bold>
-            ♛ poteto on
-          </Text>
-        ) : (
-          <Text key="poteto" dimColor>
-            ♔ poteto off
-          </Text>
-        )}
+        <Button
+          key="poteto"
+          plain
+          dimColor={!isOn}
+          label={isOn ? '♛ poteto on' : '♔ poteto off'}
+          onPress={() => void togglePoteto($, isPotetoDefault)}
+        />
       </Box>
     )
   })
