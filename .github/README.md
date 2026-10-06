@@ -14,8 +14,10 @@ Upstream files are kept byte-identical. Everything Claude Code specific lives in
 Skills only, without the agents and the mod:
 
 ```bash
-npx skills add PickleBoxer/pstack --skill poteto-mode
+npx skills add PickleBoxer/pstack --skill '*'
 ```
+
+Install them all: the skills link to each other and to the principles. Without the mod they keep upstream's Cursor wording (`Task`, Grok models), and poteto-mode is listed by its display name, `--skill "Poteto Mode"`.
 
 ## Use
 
