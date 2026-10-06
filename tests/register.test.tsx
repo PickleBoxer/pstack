@@ -1,7 +1,8 @@
-import type { AgentSpawnInput, CommandRunInput, On, PromptSubmitInput } from 'claude-code'
+import type { AgentSpawnInput, CommandRunInput, FsEntry, On, PromptSubmitInput } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
+import { descriptionFrom, grouped } from '../hooks/catalog'
 import { reminderFrom } from '../hooks/poteto'
 import { agentModel, agentType, harnessNote, modelsFrom } from '../hooks/translate'
 
@@ -161,13 +162,31 @@ describe('agent.spawn', () => {
 const POTETO_SKILL = '---\nname: Poteto Mode\nmode: true\nreminder: New task? Apply it.\n---\n\n# Poteto mode\n'
 const PROJECT = '/work/app'
 
+function entry(name: string, kind: 'file' | 'dir'): FsEntry {
+  return { name, kind, size: 0, mtimeMs: 0, isLink: false }
+}
+
 // A session in PROJECT whose store starts with `stored`
-async function session($: Engine, on: On, stored: Record<string, unknown> = {}): Promise<void> {
+async function session($: Engine, on: On, stored: Record<string, unknown> = {}, filled: string[] = []): Promise<void> {
   engine(on)
   mock.store(on, stored)
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('session.root', async () => ({ value: PROJECT }))
-  on('fs.read', async () => ({ value: POTETO_SKILL }))
+  on('fs.list', async () => ({
+    value: [
+      ...['how', 'poteto-mode', 'principle-prove-it-works', 'brand-new'].map(name => entry(name, 'dir')),
+      entry('notes.md', 'file'),
+    ],
+  }))
+  on('fs.read', async (_$, e) => ({
+    value: e.path.endsWith('poteto-mode/SKILL.md') ? POTETO_SKILL : `---\ndescription: "About ${e.path.split('/').at(-2)}"\n---\n`,
+  }))
+  on('prompt.fill', async (_$, e) => {
+    filled.push(e.text)
+
+    return { isFilled: true }
+  })
+  on('command.describe', async (_$, e) => ({ description: e.description, isHidden: e.isHidden }))
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
   on('command.run', async () => ({ text: 'engine' }))
   await $.session.start({ cwd: PROJECT, surface: 'terminal', isInteractive: true })
@@ -242,5 +261,85 @@ describe('poteto mode', () => {
 
     expect(before).toEqual(['focus'])
     expect(after).toEqual(['focus', '♛ poteto'])
+  })
+})
+
+const PANE_PROPS = {
+  title: 'pstack',
+  isFocused: true,
+  bodyColumns: 100,
+  placement: 'dock' as const,
+  scroll: { offset: 0, bodyRows: 40 },
+  view: {},
+}
+
+function describeInput(command: string) {
+  return { command, description: 'd', isHidden: false, immediate: false, provider: { plugin: 'pstack', tier: 'user' as const } }
+}
+
+describe('/pstack pane', () => {
+  test('reads quoted and plain descriptions', () => {
+    expect(descriptionFrom('---\nname: tdd\ndescription: "Use only when asked"\n---')).toBe('Use only when asked')
+    expect(descriptionFrom('---\ndescription: Explain how X works\n---')).toBe('Explain how X works')
+    expect(descriptionFrom('no frontmatter')).toBe('')
+  })
+
+  test('groups skills in plan order, principles together, unknown ones in Other', () => {
+    const names = ['why', 'principle-b', 'how', 'zzz', 'poteto-help', 'poteto-mode', 'principle-a']
+    const groups = grouped(names.map(name => ({ name, description: '' })))
+
+    expect(groups.map(group => [group.title, group.skills.map(skill => skill.name)])).toEqual([
+      ['Start here', ['poteto-mode', 'poteto-help']],
+      ['Understand', ['how', 'why']],
+      ['Principles', ['principle-a', 'principle-b']],
+      ['Other', ['zzz']],
+    ])
+  })
+
+  test('lists skills by group and fills the prompt on press', async ($, on) => {
+    const filled: string[] = []
+    await session($, on, {}, filled)
+
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const ui = await $.ui.mount({ plugin: 'pstack', surface, component: 'Pane', requestId: 'pstack', props: PANE_PROPS })
+
+      expect(await ui.find({ type: 'Text', text: 'Start here' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Other' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'About how' })).toBeDefined()
+      expect(await ui.find({ key: 'run-notes.md' })).toBeUndefined()
+
+      await ui.press({ key: 'run-how' })
+      await ui.unmount()
+    }
+
+    expect(filled).toEqual(['/pstack:how ', '/pstack:how '])
+  })
+
+  test('hide removes a skill from the / menu and remembers it', async ($, on) => {
+    const stored: Record<string, unknown> = {}
+    await session($, on, stored)
+    const ui = await $.ui.mount({ plugin: 'pstack', surface: 'terminal', component: 'Pane', requestId: 'pstack', props: PANE_PROPS })
+
+    const before = await $.command.describe(describeInput('pstack:how'))
+    await ui.press({ key: 'hide-how' })
+    const hidden = await $.command.describe(describeInput('pstack:how'))
+    const other = await $.command.describe(describeInput('how'))
+    const label = (await ui.find({ key: 'hide-how' }))?.text
+    await ui.press({ key: 'hide-how' })
+    const shown = await $.command.describe(describeInput('pstack:how'))
+
+    expect(before.isHidden).toBe(false)
+    expect(hidden.isHidden).toBe(true)
+    expect(other.isHidden).toBe(false)
+    expect(label).toBe('show')
+    expect(shown.isHidden).toBe(false)
+  })
+
+  test('starts with the hidden skills from the store', async ($, on) => {
+    await session($, on, { hidden: ['why', 42] })
+
+    const why = await $.command.describe(describeInput('pstack:why'))
+
+    expect(why.isHidden).toBe(true)
   })
 })
