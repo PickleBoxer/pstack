@@ -81,6 +81,13 @@ describe('translate', () => {
     expect(note).toContain('`claude-opus-*` slugs mean the parent model')
     expect(note).toContain('use `haiku`')
   })
+
+  test('the note loads principles through the Skill tool and other pstack files one Read at a time', () => {
+    const note = harnessNote('/p', DEFAULTS)
+
+    expect(note).toContain('Skill tool as `pstack:principle-<slug>`')
+    expect(note).toContain('never through `cat`, `sed` or `head`')
+  })
 })
 
 describe('prompt.submit', () => {
@@ -361,6 +368,21 @@ describe('/pstack pane', () => {
     expect(readOne).toBeDefined()
     expect(afterLabel).toBe('Loaded 0')
     expect(afterRun).toBeUndefined()
+  })
+
+  test('the Loaded tab lists principles Claude loads through the Skill tool', async ($, on) => {
+    await session($, on)
+    await $.tool.call({ tool: 'Skill', skill: 'pstack:principle-prove-it-works' })
+    await $.tool.call({ tool: 'Skill', skill: 'other:principle-prove-it-works' })
+    const ui = await $.ui.mount({ plugin: 'pstack', surface: 'terminal', component: 'Pane', requestId: 'pstack', props: PANE_PROPS })
+
+    await ui.press({ key: 'group-Loaded' })
+    const label = (await ui.find({ key: 'group-Loaded' }))?.text
+    const note = await ui.find({ type: 'Text', text: 'loaded by Claude this session' })
+    await ui.unmount()
+
+    expect(label).toBe('Loaded 1')
+    expect(note).toBeDefined()
   })
 
   test('hide removes a skill from the / menu and remembers it', async ($, on) => {

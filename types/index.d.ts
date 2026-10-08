@@ -5,7 +5,7 @@ export type PstackPoteto = boolean
 export type PstackSkill = { name: string; description: string }
 
 // A pstack skill whose text sits in the main conversation: its files read, or typed as /pstack:<name>
-export type PstackLoaded = { name: string; via: 'read' | 'run' }
+export type PstackLoaded = { name: string; via: 'read' | 'run' | 'skill' }
 
 declare module 'claude-code' {
   interface PluginState {

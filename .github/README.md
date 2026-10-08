@@ -2,7 +2,7 @@
 
 [pstack](https://github.com/cursor/plugins/tree/main/pstack) is Lauren Tan's ([@poteto](https://github.com/poteto)) set of rigorous engineering skills for coding agents: poteto-mode, how/why, architect, arena, verification skills and a library of principles. It ships as a Cursor plugin. This repo packages it as a Claude Code plugin and keeps it in sync with upstream.
 
-Upstream files are kept byte-identical. Everything Claude Code specific lives in new files (`.claude-plugin/`, `hooks/`, `.github/`, `scripts/`). A small mod adapts Cursor-isms (the `Task` tool, `AskQuestion`, Grok model slugs, Cursor agent names) to Claude Code at runtime.
+Upstream files are merged in with as few local edits as possible. The principle skills are the one standing edit: each one's frontmatter has its title as the description and no `disable-model-invocation`, so Claude loads them through the Skill tool. CI fails if a merge brings the flag back. Everything else Claude Code specific lives in new files (`.claude-plugin/`, `hooks/`, `.github/`, `scripts/`). A small mod adapts Cursor-isms (the `Task` tool, `AskQuestion`, Grok model slugs, Cursor agent names) to Claude Code at runtime.
 
 ## Install
 
@@ -21,7 +21,7 @@ Install them all: the skills link to each other and to the principles. Without t
 
 ## Use
 
-Every skill is typed-only, so pstack costs no context until you call one.
+Every skill except the principles is typed-only. The principles are listed by title only, so pstack costs little context until you call one.
 
 | Command | What it does |
 |---|---|

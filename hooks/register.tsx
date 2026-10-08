@@ -11,7 +11,12 @@ const PSTACK_COMMAND = /^\/pstack:(\S+)/
 const PANE = 'pstack'
 const HIDDEN_KEY = 'hidden'
 const LOADED_TAB = 'Loaded'
-const WORDMARK = ['█▀█ █▀ ▀█▀ ▄▀█ █▀▀ █▄▀', '█▀▀ ▄█  █  █▀█ █▄▄ █ █']
+const LOADED_NOTES: Record<PstackLoaded['via'], string> = {
+  read: 'read this session',
+  run: 'run this session',
+  skill: 'loaded by Claude this session',
+}
+const WORDMARK =['█▀█ █▀ ▀█▀ ▄▀█ █▀▀ █▄▀', '█▀▀ ▄█  █  █▀█ █▄▄ █ █']
 
 const poteto = atom({ plugin: 'pstack', key: 'poteto' } as const, false)
 const skills = atom({ plugin: 'pstack', key: 'skills' } as const, [])
@@ -166,6 +171,17 @@ export const register: Register = (on, options) => {
     return { ...result, context: [...(result.context ?? []), harnessNote($.plugin.root, models)] }
   })
 
+  on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
+    const result = await next(e)
+    const name = e.skill.match(/^pstack:(principle-[a-z-]+)$/)?.[1]
+
+    if (name !== undefined && result.deny === undefined && e.agentId === undefined) {
+      await markLoaded($, name, 'skill')
+    }
+
+    return result
+  })
+
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
 
@@ -221,7 +237,7 @@ export const register: Register = (on, options) => {
     const pinnedRows = isPinned ? [{ name: 'poteto-mode', note: 'in context while poteto is on' }] : []
     const sessionLoaded = (await read($, loaded))
       .filter(one => !(isPinned && one.name === 'poteto-mode'))
-      .map(one => ({ name: one.name, note: one.via === 'read' ? 'read this session' : 'run this session' }))
+      .map(one => ({ name: one.name, note: LOADED_NOTES[one.via] }))
     const loadedRows = [...pinnedRows, ...sessionLoaded]
     const loadedNames = new Set(loadedRows.map(one => one.name))
 

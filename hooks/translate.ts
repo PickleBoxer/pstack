@@ -46,7 +46,7 @@ function named(model: string): string {
 export function harnessNote(root: string, models: Models): string {
   return [
     'pstack was written for Cursor. You are in Claude Code, so translate its instructions as you follow them:',
-    `- Another pstack skill: Read \`${root}/skills/<name>/SKILL.md\` and follow it. Never use the Skill tool for pstack skills; they are typed-only and it refuses them.`,
+    `- Another pstack skill: Read \`${root}/skills/<name>/SKILL.md\` and follow it. Principles are the exception: load one with the Skill tool as \`pstack:principle-<slug>\`. The Skill tool refuses every other pstack skill. Read pstack files one per Read call, in parallel when there are several, never through \`cat\`, \`sed\` or \`head\` in Bash.`,
     '- `Task` tool or call: the `Agent` tool. Subagent types: `generalPurpose` is `general-purpose`, `poteto-agent` is `pstack:poteto-agent`, `Comment Sicko` is `pstack:Comment Sicko`. Readonly agent mode: the `Explore` agent. `environment: "cloud"`: `isolation: "worktree"`.',
     '- `AskQuestion`: `AskUserQuestion`.',
     `- Models: \`~/.cursor/rules/pstack-models.mdc\` and \`/setup-pstack\` do not exist here, so use the defaults below. Grok slugs mean ${named(models.code)}. \`claude-opus-*\` slugs mean ${named(models.judgment)}. Fast searches (the recall fan-out, readonly exploration) use ${named(models.search)}. \`inherit\`, \`inherit-parent\` and \`auto\` mean omit \`model\`. A panel of Opus and Grok is one judgment-model and one code-model agent.`,

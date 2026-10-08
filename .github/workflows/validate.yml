@@ -14,6 +14,8 @@ jobs:
         with:
           node-version: 22
       - run: npx -y @anthropic-ai/claude-code plugin validate . --strict
+      # Principles load through the Skill tool, and an upstream merge brings the typed-only flag back on new ones
+      - run: "! grep -l 'disable-model-invocation' skills/principle-*/SKILL.md"
       # plugin test runs every *.test.ts under the folder, and upstream's bun tests under skills/ cannot load there
       - run: |
           mkdir "$RUNNER_TEMP/mod"

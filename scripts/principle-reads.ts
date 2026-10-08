@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Runs organic tasks headless with poteto mode on and reports which principle leaves the model read and which it cited.
-// Usage: bun scripts/principle-reads.ts [--runs N] [--model M] [--max-turns N] [case ...]
+// Usage: bun scripts/principle-reads.ts [--runs N] [--model M] [--max-turns N] [--plugin-dir DIR] [case ...]
 import { readdirSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -16,11 +16,15 @@ type Case = {
   files: Record<string, string>
 }
 
+type Via = 'skill' | 'read' | 'bash'
+
+const TOOL_VIA: Record<string, Via> = { Skill: 'skill', Read: 'read', Bash: 'bash' }
+
 type Run = {
   name: string
   dir: string
   delivered: boolean
-  read: Principle[]
+  loads: string[]
   cited: Principle[]
   hit: boolean
   citedUnread: Principle[]
@@ -177,8 +181,8 @@ async function run(one: Case, flags: string[]): Promise<Run> {
     .filter(Boolean)
     .map(line => JSON.parse(line))
 
-  const attempts = new Map<string, Principle[]>()
-  const read = new Set<Principle>()
+  const attempts = new Map<string, { via: Via; slugs: Principle[] }>()
+  const loads = new Map<Principle, Via>()
 
   for (const event of events) {
     if (event.parent_tool_use_id) {
@@ -186,18 +190,26 @@ async function run(one: Case, flags: string[]): Promise<Run> {
     }
 
     for (const block of event.message?.content ?? []) {
-      if (block.type === 'tool_use' && (block.name === 'Read' || block.name === 'Bash')) {
-        const target = String(block.input.file_path ?? block.input.command)
-        attempts.set(block.id, [...target.matchAll(/skills\/(principle-[a-z-]+)\/SKILL\.md/g)].map(match => match[1] as Principle))
+      if (block.type === 'tool_use' && block.name in TOOL_VIA) {
+        const target = String(block.input.skill ?? block.input.file_path ?? block.input.command)
+        const slugs = [...target.matchAll(/(principle-[a-z-]+)(?:\/SKILL\.md|$)/g)].map(match => match[1] as Principle)
+        attempts.set(block.id, { via: TOOL_VIA[block.name], slugs })
       }
 
-      if (block.type === 'tool_result' && !block.is_error) {
-        for (const slug of attempts.get(block.tool_use_id) ?? []) {
-          read.add(slug)
+      const attempt = block.type === 'tool_result' ? attempts.get(block.tool_use_id) : undefined
+
+      // A shell line can fail after printing some files and succeed after truncating others, so file loads count by content
+      for (const slug of attempt?.slugs ?? []) {
+        const arrived = attempt?.via === 'skill' ? !block.is_error : JSON.stringify(block.content).includes(`# ${titles.get(slug)}`)
+
+        if (arrived && !loads.has(slug)) {
+          loads.set(slug, attempt!.via)
         }
       }
     }
   }
+
+  const read = new Set(loads.keys())
 
   const resultEvent = events.findLast(event => event.type === 'result')
   const cited = cites(String(resultEvent?.result ?? ''))
@@ -208,7 +220,7 @@ async function run(one: Case, flags: string[]): Promise<Run> {
     name: one.name,
     dir,
     delivered,
-    read: [...read],
+    loads: [...loads].map(([slug, via]) => `${slug} (${via})`),
     cited,
     hit: one.expect.some(slug => read.has(slug)),
     citedUnread: cited.filter(slug => !read.has(slug)),
@@ -217,11 +229,21 @@ async function run(one: Case, flags: string[]): Promise<Run> {
 
 const { values, positionals } = parseArgs({
   args: Bun.argv.slice(2),
-  options: { runs: { type: 'string', default: '1' }, model: { type: 'string' }, 'max-turns': { type: 'string', default: '40' } },
+  options: {
+    runs: { type: 'string', default: '1' },
+    model: { type: 'string' },
+    'max-turns': { type: 'string', default: '40' },
+    'plugin-dir': { type: 'string' },
+  },
   allowPositionals: true,
 })
 
-const flags = [...(values.model ? ['--model', values.model] : []), '--max-turns', values['max-turns']]
+const flags = [
+  ...(values.model ? ['--model', values.model] : []),
+  ...(values['plugin-dir'] ? ['--plugin-dir', values['plugin-dir']] : []),
+  '--max-turns',
+  values['max-turns'],
+]
 const picked = positionals.length === 0 ? cases : cases.filter(one => positionals.includes(one.name))
 const jobs = picked.flatMap(one => Array.from({ length: Number(values.runs) }, () => run(one, flags)))
 const runs = await Promise.all(jobs)
@@ -230,7 +252,7 @@ for (const one of runs) {
   console.log(
     [
       `${one.hit ? 'HIT ' : 'MISS'} ${one.name}${one.delivered ? '' : ' (poteto not delivered, run invalid)'}`,
-      `  read:         ${one.read.join(', ') || 'none'}`,
+      `  loaded:       ${one.loads.join(', ') || 'none'}`,
       `  cited:        ${one.cited.join(', ') || 'none'}`,
       `  cited unread: ${one.citedUnread.join(', ') || 'none'}`,
       `  dir:          ${one.dir}`,
